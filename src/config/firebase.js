@@ -9,7 +9,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyApmi-q1byA2uZM5hbrSHij1-onHiIN0xE",
   authDomain: "logisen-dc7fe.firebaseapp.com",
   projectId: "logisen-dc7fe",
-  storageBucket: "logisen-dc7fe.firebasestorage.app",
+  storageBucket: "logisen-dc7fe.appspot.com",
   messagingSenderId: "276883422960",
   appId: "1:276883422960:web:96f1c8e2528a1308790c35",
   measurementId: "G-9KQ48EQVGY"

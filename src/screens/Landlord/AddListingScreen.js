@@ -4,49 +4,63 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import COLORS from '../../constants/colors';
-import { auth, db, storage } from '../../config/firebase';
-import { collection, addDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { auth, db } from '../../config/firebase';
+import { collection, addDoc, doc, updateDoc } from 'firebase/firestore';
 
-const AddListingScreen = ({ navigation }) => {
+const AddListingScreen = ({ navigation, route }) => {
   const uid = auth.currentUser?.uid || null;
-  const [title, setTitle] = useState('');
-  const [desc, setDesc] = useState('');
-  const [price, setPrice] = useState('');
-  const [area, setArea] = useState('');
-  const [type, setType] = useState('Studio');
-  const [images, setImages] = useState([]);
-  const [phone, setPhone] = useState('');
-  const [bathroomPrivate, setBathroomPrivate] = useState(false);
-  const [toiletShared, setToiletShared] = useState(false);
-  const [kitchenAccess, setKitchenAccess] = useState(false);
-  const [studioConfig, setStudioConfig] = useState('');
-  const [aptBedrooms, setAptBedrooms] = useState('');
+  const editingListing = route?.params?.listing || null;
+  const editingId = route?.params?.id || (editingListing ? editingListing.id : null);
+  const isEditing = !!editingId;
+  const detailsExisting = editingListing?.details || {};
+  const [title, setTitle] = useState(editingListing?.title || '');
+  const [desc, setDesc] = useState(editingListing?.desc || '');
+  const [price, setPrice] = useState(editingListing?.price || '');
+  const [area, setArea] = useState(editingListing?.area || '');
+  const [type, setType] = useState(editingListing?.type || 'Studio');
+  const [images, setImages] = useState(
+    Array.isArray(editingListing?.images) ? editingListing.images : []
+  );
+  const [phone, setPhone] = useState(editingListing?.phone || '');
+  const [bathroomPrivate, setBathroomPrivate] = useState(
+    !!(detailsExisting.chambre && detailsExisting.chambre.bathroomPrivate)
+  );
+  const [toiletShared, setToiletShared] = useState(
+    !!(detailsExisting.chambre && detailsExisting.chambre.toiletShared)
+  );
+  const [kitchenAccess, setKitchenAccess] = useState(
+    !!(detailsExisting.chambre && detailsExisting.chambre.kitchenAccess)
+  );
+  const [studioConfig, setStudioConfig] = useState(
+    detailsExisting.studio && detailsExisting.studio.config ? detailsExisting.studio.config : ''
+  );
+  const [aptBedrooms, setAptBedrooms] = useState(
+    detailsExisting.appartement && detailsExisting.appartement.bedrooms
+      ? String(detailsExisting.appartement.bedrooms)
+      : ''
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const handlePickImage = async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (perm.status !== 'granted') {
-      return;
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (perm.status !== 'granted') {
+        setError("Autorisation caméra refusée");
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.7,
+      });
+      if (result.canceled || !result.assets || !result.assets.length) return;
+      const asset = result.assets[0];
+      const uri = asset?.uri;
+      if (!uri) return;
+      setImages((prev) => [...prev, uri]);
+    } catch (e) {
+      setError("Impossible d’ouvrir la caméra, vérifiez les permissions de l’application");
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: false,
-      quality: 0.7,
-    });
-    if (result.canceled || !result.assets || !result.assets.length) return;
-    const uri = result.assets[0].uri;
-    setImages(prev => [...prev, uri]);
-  };
-
-  const uploadImageAsync = async (uri, owner) => {
-    const response = await fetch(uri);
-    const blob = await response.blob();
-    const imageRef = ref(storage, `listings/${owner}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`);
-    await uploadBytes(imageRef, blob);
-    const downloadURL = await getDownloadURL(imageRef);
-    return downloadURL;
   };
 
   const handleSave = async () => {
@@ -81,11 +95,6 @@ const AddListingScreen = ({ navigation }) => {
     try {
       setError('');
       setSaving(true);
-      let uploaded = [];
-      for (const uri of images) {
-        const url = await uploadImageAsync(uri, uid);
-        uploaded.push(url);
-      }
       const payload = {
         ownerId: uid,
         title: title.trim(),
@@ -93,8 +102,13 @@ const AddListingScreen = ({ navigation }) => {
         price: price.trim(),
         area: area.trim(),
         type,
-        createdAt: new Date().toISOString(),
-        images: uploaded,
+        createdAt:
+          isEditing && editingListing && editingListing.createdAt
+            ? editingListing.createdAt
+            : new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        // Photos désactivées pour l’instant côté backend
+        images: [],
         phone: phone.trim(),
         details: {
           chambre: {
@@ -110,7 +124,11 @@ const AddListingScreen = ({ navigation }) => {
           },
         },
       };
-      await addDoc(collection(db, 'listings'), payload);
+      if (isEditing && editingId) {
+        await updateDoc(doc(db, 'listings', editingId), payload);
+      } else {
+        await addDoc(collection(db, 'listings'), payload);
+      }
       navigation.goBack();
     } catch (e) {
       setError("Impossible d’enregistrer le logement");
@@ -140,7 +158,7 @@ const AddListingScreen = ({ navigation }) => {
               >
                 <Ionicons name="chevron-back" size={22} color={COLORS.darkGray} />
               </TouchableOpacity>
-              <Text style={styles.headerTitle}>Ajouter un logement</Text>
+              <Text style={styles.headerTitle}>{isEditing ? 'Modifier le logement' : 'Ajouter un logement'}</Text>
               <View style={{ width: 32 }} />
             </View>
 
@@ -290,6 +308,28 @@ const AddListingScreen = ({ navigation }) => {
                 />
 
                 <Text style={styles.label}>Quartier</Text>
+                <View style={styles.areaRow}>
+                  {['Fann', 'Point E', 'Almadies'].map((q) => {
+                    const isActive = area === q;
+                    return (
+                      <TouchableOpacity
+                        key={q}
+                        style={[styles.areaChip, isActive && styles.areaChipActive]}
+                        activeOpacity={0.9}
+                        onPress={() => setArea(q)}
+                      >
+                        <Text
+                          style={[
+                            styles.areaChipText,
+                            isActive && { color: COLORS.white },
+                          ]}
+                        >
+                          {q}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
                 <TextInput
                   style={styles.input}
                   placeholder="Fann, Point E, Almadies…"
@@ -342,7 +382,7 @@ const AddListingScreen = ({ navigation }) => {
                   disabled={saving}
                 >
                   <Text style={styles.saveText}>
-                    {saving ? "Enregistrement..." : "Publier le logement"}
+                    {saving ? "Enregistrement..." : isEditing ? "Mettre à jour le logement" : "Publier le logement"}
                   </Text>
                 </TouchableOpacity>
               </ScrollView>
@@ -433,6 +473,18 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   addPhotoText: { color: COLORS.darkGray, fontWeight: '600', fontSize: 13 },
+  areaRow: { flexDirection: 'row', gap: 8, marginBottom: 6, marginTop: 2 },
+  areaChip: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    alignItems: 'center',
+    backgroundColor: '#FAFAFA',
+  },
+  areaChipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  areaChipText: { color: COLORS.darkGray, fontWeight: '600', fontSize: 13 },
   error: { marginTop: 10, color: COLORS.error, textAlign: 'center' },
   saveButton: {
     marginTop: 18,

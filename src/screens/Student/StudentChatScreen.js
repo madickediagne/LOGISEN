@@ -2,15 +2,59 @@ import React from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import COLORS from '../../constants/colors';
-
-const mockConversations = [
-  { id: 'c1', title: 'Bailleur - Studio Fann', last: 'Bonjour, le studio est disponible', time: '10:24' },
-  { id: 'c2', title: 'Agence - Chambre Point E', last: 'Visite possible samedi ?', time: 'Hier' },
-];
+import { auth, db } from '../../config/firebase';
+import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
 
 const StudentChatScreen = ({ navigation }) => {
-  const [convs, setConvs] = React.useState(mockConversations);
+  const [convs, setConvs] = React.useState([]);
   const [query, setQuery] = React.useState('');
+
+  React.useEffect(() => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const q = queryRef(uid);
+    const unsub = onSnapshot(
+      q,
+      snap => {
+        const items = snap.docs.map(d => {
+          const data = d.data();
+          const isStudent = data.studentId === uid;
+          const title = isStudent
+            ? `Bailleur - ${data.listingTitle || ''}`.trim()
+            : `Étudiant - ${data.studentName || ''}`.trim();
+          return {
+            id: d.id,
+            title,
+            last: data.lastMessage || '',
+            updatedAt: data.updatedAt || null,
+          };
+        });
+        setConvs(items);
+      },
+      () => {
+        setConvs([]);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  const queryRef = (uid) => {
+    const base = query(
+      collection(db, 'conversations'),
+      where('participants', 'array-contains', uid)
+    );
+    try {
+      return query(base, orderBy('updatedAt', 'desc'));
+    } catch {
+      return base;
+    }
+  };
+
+  const filtered = convs.filter(
+    c =>
+      c.title.toLowerCase().includes(query.toLowerCase()) ||
+      c.last.toLowerCase().includes(query.toLowerCase())
+  );
 
   return (
     <View style={styles.container}>
@@ -34,7 +78,7 @@ const StudentChatScreen = ({ navigation }) => {
           <Ionicons name="add-outline" size={18} color={COLORS.white} />
         </TouchableOpacity>
       </View>
-      {convs.filter(c => c.title.toLowerCase().includes(query.toLowerCase()) || c.last.toLowerCase().includes(query.toLowerCase())).length === 0 ? (
+      {filtered.length === 0 ? (
         <View style={styles.empty}>
           <Ionicons name="chatbubbles-outline" size={26} color={COLORS.gray} />
           <Text style={styles.emptyTitle}>Aucune conversation</Text>
@@ -42,11 +86,15 @@ const StudentChatScreen = ({ navigation }) => {
         </View>
       ) : (
         <FlatList
-          data={convs.filter(c => c.title.toLowerCase().includes(query.toLowerCase()) || c.last.toLowerCase().includes(query.toLowerCase()))}
+          data={filtered}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 20 }}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.conv} activeOpacity={0.9}>
+            <TouchableOpacity
+              style={styles.conv}
+              activeOpacity={0.9}
+              onPress={() => navigation.navigate('ChatThread', { conversationId: item.id })}
+            >
               <View style={styles.convIcon}>
                 <Ionicons name="person-outline" size={18} color={COLORS.primary} />
               </View>
@@ -54,7 +102,7 @@ const StudentChatScreen = ({ navigation }) => {
                 <Text style={styles.convTitle}>{item.title}</Text>
                 <Text style={styles.convLast}>{item.last}</Text>
               </View>
-              <Text style={styles.convTime}>{item.time}</Text>
+              <Text style={styles.convTime}>{item.updatedAt ? '' : ''}</Text>
             </TouchableOpacity>
           )}
         />
@@ -64,7 +112,7 @@ const StudentChatScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: '#fff', paddingTop: 40 },
   header: { height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#EFEFEF' },
   back: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F7F7F7' },
   title: { fontSize: 18, fontWeight: '700', color: COLORS.darkGray },

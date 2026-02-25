@@ -46,24 +46,33 @@ const RegisterScreen = ({ navigation, route }) => {
       setLoading(true);
       const flow = (async () => {
         const cred = await createUserWithEmailAndPassword(auth, trimmedEmail, password);
-        await updateProfile(cred.user, { displayName: fullName });
-        const payload = {
-          uid: cred.user.uid,
-          role,
-          fullName,
-          phone,
-          email: trimmedEmail,
-          city: role === 'landlord' ? city : '',
-          createdAt: new Date().toISOString(),
-        };
-        await setDoc(doc(db, 'users', cred.user.uid), payload);
-        return cred;
+        try {
+          await updateProfile(cred.user, { displayName: fullName });
+          const payload = {
+            uid: cred.user.uid,
+            role,
+            fullName,
+            phone,
+            email: trimmedEmail,
+            city: role === 'landlord' ? city : '',
+            createdAt: new Date().toISOString(),
+          };
+          await setDoc(doc(db, 'users', cred.user.uid), payload);
+          return cred;
+        } catch (err) {
+          try {
+            await cred.user.delete();
+          } catch {}
+          throw err;
+        }
       })();
       const timeout = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('register-timeout')), 10000)
       );
-      await Promise.race([flow, timeout]);
-      navigation.replace(role === 'landlord' ? 'LandlordHome' : 'StudentHome');
+      const result = await Promise.race([flow, timeout]);
+      if (result) {
+        navigation.replace(role === 'landlord' ? 'LandlordHome' : 'StudentHome');
+      }
     } catch (e) {
       let msg = "Échec de l'inscription";
       if (e?.message === 'register-timeout') msg = "Connexion trop lente, vérifiez votre internet et réessayez";
@@ -72,6 +81,7 @@ const RegisterScreen = ({ navigation, route }) => {
       else if (e?.code === 'auth/operation-not-allowed') msg = "Opération non autorisée";
       else if (e?.code === 'auth/weak-password') msg = "Mot de passe trop faible";
       else if (e?.code === 'auth/network-request-failed') msg = "Problème réseau, réessayez";
+      else if (e?.code === 'permission-denied') msg = "Autorisation refusée pour enregistrer les données, vérifiez la configuration Firebase";
       setError(msg);
     } finally {
       setLoading(false);

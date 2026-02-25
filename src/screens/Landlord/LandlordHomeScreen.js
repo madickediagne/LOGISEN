@@ -1,16 +1,17 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, FlatList, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import COLORS from '../../constants/colors';
 import { auth, db } from '../../config/firebase';
-import { collection, query, where, getDocs, limit } from 'firebase/firestore';
+import { collection, query, where, getDocs, limit, onSnapshot } from 'firebase/firestore';
 
 const LandlordHomeScreen = ({ navigation }) => {
   const uid = auth.currentUser?.uid || null;
   const [fullName, setFullName] = React.useState(auth.currentUser?.displayName || '');
   const [listings, setListings] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
+  const [visitCount, setVisitCount] = React.useState(0);
 
   React.useEffect(() => {
     if (!uid) {
@@ -31,6 +32,35 @@ const LandlordHomeScreen = ({ navigation }) => {
     })();
   }, [uid]);
 
+  React.useEffect(() => {
+    if (!uid) {
+      setVisitCount(0);
+      return;
+    }
+    const q = query(collection(db, 'visits'), where('landlordId', '==', uid));
+    const unsubscribe = onSnapshot(
+      q,
+      (snap) => {
+        if (snap.empty) {
+          setVisitCount(0);
+        } else {
+          let count = 0;
+          snap.forEach(d => {
+            const status = d.data().status || 'pending';
+            if (status === 'pending' || status === 'confirmed') {
+              count += 1;
+            }
+          });
+          setVisitCount(count);
+        }
+      },
+      () => {
+        setVisitCount(0);
+      }
+    );
+    return () => unsubscribe();
+  }, [uid]);
+
   const renderItem = ({ item }) => (
     <TouchableOpacity
       style={styles.card}
@@ -39,7 +69,11 @@ const LandlordHomeScreen = ({ navigation }) => {
     >
       <View style={styles.cardRow}>
         <View style={styles.thumb}>
-          <Ionicons name="home-outline" size={20} color={COLORS.primary} />
+          {item.images && item.images.length > 0 ? (
+            <Image source={{ uri: item.images[0] }} style={styles.thumbImage} />
+          ) : (
+            <Ionicons name="home-outline" size={20} color={COLORS.primary} />
+          )}
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.cardTitle}>{item.title || 'Logement'}</Text>
@@ -83,7 +117,7 @@ const LandlordHomeScreen = ({ navigation }) => {
             <Text style={styles.kpiLabel}>Logements</Text>
           </View>
           <View style={styles.kpi}>
-            <Text style={styles.kpiValue}>0</Text>
+            <Text style={styles.kpiValue}>{visitCount}</Text>
             <Text style={styles.kpiLabel}>Visites</Text>
           </View>
           <View style={styles.kpi}>
@@ -252,7 +286,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.secondary,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
+  thumbImage: { width: '100%', height: '100%' },
   cardTitle: { fontSize: 16, fontWeight: '700', color: COLORS.darkGray },
   cardMeta: { fontSize: 13, color: COLORS.gray, marginTop: 4 },
   statusBadge: {

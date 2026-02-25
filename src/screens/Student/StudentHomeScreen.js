@@ -212,7 +212,13 @@ const StudentHomeScreen = ({ navigation }) => {
           const passQuery = !q || title.includes(q) || area.includes(q);
           const passType = !activeType || effectiveType === activeType.toLowerCase();
           const campusAreas = universityAreas[selectedUniversity] || [];
-          const passUniversity = !selectedUniversity || !campusAreas.length || campusAreas.map(a => a.toLowerCase()).includes(area);
+          const dakarUniversities = ['UCAD', 'ESP', 'Sup de Co', 'ISM', 'IAM', 'UVS'];
+          const isOutOfDakar = selectedUniversity && !dakarUniversities.includes(selectedUniversity);
+          const passUniversity =
+            !selectedUniversity ||
+            isOutOfDakar ||
+            !campusAreas.length ||
+            campusAreas.map(a => a.toLowerCase()).includes(area);
           return passPrice && passQuery && passType && passUniversity;
         })}
         keyExtractor={(item) => item.id}
